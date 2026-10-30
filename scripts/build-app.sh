@@ -5,8 +5,9 @@ cd "$(dirname "$0")/.."
 VERSION=$(cat VERSION)
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)/MacSnap
+# Apple silicon only: macOS 27, the minimum, doesn't run on Intel Macs.
+swift build -c release --arch arm64
+BIN=$(swift build -c release --arch arm64 --show-bin-path)/MacSnap
 
 APP=dist/MacSnap.app
 rm -rf "$APP"

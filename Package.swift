@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "MacSnap",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS("27.0")],
     products: [
         .executable(name: "MacSnap", targets: ["MacSnap"]),
     ],

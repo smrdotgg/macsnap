@@ -56,7 +56,8 @@ operation log. Nothing is flattened until you copy, save or pin.
 
 ## Install
 
-Requirements: macOS 15 or later and the Xcode command-line tools (Swift 6).
+Requirements: an Apple silicon Mac on macOS 27 or later, and the Xcode
+command-line tools (Swift 6.4).
 
 ```bash
 git clone <this repo> macsnap && cd macsnap
