@@ -176,6 +176,7 @@ final class AppController: NSObject, NSMenuDelegate {
         if !ScreenCapture.hasPermission {
             add("⚠︎ Grant Screen Recording Permission…") { [weak self] in self?.promptPermission() }
         }
+        add("Welcome & Setup…") { WelcomeWindow.show() }
         add("Edit Configuration…") { [weak self] in self?.editConfig() }
         add("Reload Configuration") { [weak self] in self?.reloadConfig() }
         let login = ClosureMenuItem(title: "Launch at Login") {
@@ -256,16 +257,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Permission
 
     func promptPermission() {
-        CGRequestScreenCaptureAccess()
-        let alert = NSAlert()
-        alert.messageText = "MacSnap needs Screen Recording permission"
-        alert.informativeText = "Allow MacSnap in System Settings › Privacy & Security › Screen & System Audio Recording, then try again. You may need to quit and reopen MacSnap afterwards."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Later")
-        NSApp.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-        }
+        WelcomeWindow.show()
     }
 
     // MARK: Focus

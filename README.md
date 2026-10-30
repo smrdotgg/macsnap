@@ -1,7 +1,10 @@
 # MacSnap
 
-A native macOS screenshot and annotation tool. It's a Mac adaptation of
+A free, open-source screenshot and annotation tool for macOS, inspired by
 [Omasnap](https://github.com/omacom/omasnap), the Omarchy/Hyprland tool.
+
+**[Download the latest release](https://github.com/smrdotgg/macsnap/releases/latest)**
+· Requires an Apple silicon Mac on macOS 27 or later.
 
 Press a hotkey and MacSnap freezes the screen under the pointer and shows a
 selection overlay. Drag an area, click a window, or click open space for the
@@ -56,36 +59,55 @@ operation log. Nothing is flattened until you copy, save or pin.
 
 ## Install
 
-Requirements: an Apple silicon Mac on macOS 27 or later, and the Xcode
-command-line tools (Swift 6.4).
+1. Download **MacSnap-x.y.z.dmg** from the
+   [latest release](https://github.com/smrdotgg/macsnap/releases/latest), open
+   it, and drag MacSnap into Applications.
+2. Open MacSnap. The first time, macOS says it can't verify the app, because
+   MacSnap isn't notarized by Apple (that costs $99 a year). Click **Done**,
+   then go to **System Settings › Privacy & Security**, scroll down, click
+   **Open Anyway**, and confirm. You only do this once. If you prefer the
+   terminal, this does the same:
+   `xattr -dr com.apple.quarantine /Applications/MacSnap.app`
+3. A welcome window walks you through **Screen Recording** permission. Allow
+   MacSnap in System Settings, then click **Quit & Reopen MacSnap**.
+
+A camera-viewfinder icon appears in the menu bar. Press `⌘⇧2` to capture.
+Auto-scroll in scroll capture also needs **Accessibility** permission, which
+macOS asks for the first time you use it. To start MacSnap automatically, tick
+**Open MacSnap when you log in** in the welcome window (or **Launch at Login**
+in the menu).
+
+Updates: download the new release and replace the app. Every release is
+signed with the same certificate, so your permissions carry over.
+
+### Command-line tool (optional)
 
 ```bash
-git clone <this repo> macsnap && cd macsnap
-make install
+mkdir -p ~/.local/bin
+printf '#!/bin/sh\n[ $# -eq 0 ] && set -- capture\nexec /Applications/MacSnap.app/Contents/MacOS/MacSnap "$@"\n' > ~/.local/bin/macsnap
+chmod +x ~/.local/bin/macsnap
 ```
 
-This builds a release `MacSnap.app`, installs it to `~/Applications`, adds a
-`macsnap` command to `~/.local/bin`, and launches it. A camera-viewfinder icon
-appears in the menu bar.
+### Privacy
 
-On your first capture, macOS asks for **Screen Recording** permission
-(System Settings › Privacy & Security › Screen & System Audio Recording).
-Allow MacSnap, then quit and reopen it from the menu bar. Auto-scroll in
-scroll capture also needs **Accessibility** permission, which macOS asks for
-the first time you use it.
+MacSnap makes no network requests and collects nothing. It reads the screen
+only when you start a capture. Captures stay on your Mac: in
+`~/Pictures/Screenshots` (configurable) and the last five, with their layers,
+in `~/Library/Application Support/MacSnap/recent`.
 
-To start it automatically, choose **Launch at Login** in the menu bar menu.
+### Uninstall
 
-### Why there's a "MacSnap Local Signing" keychain
+Quit MacSnap from the menu bar, then:
 
-macOS ties privacy permissions to an app's code signature. An ad-hoc
-signature changes with every build, so each rebuild would lose your Screen
-Recording permission. On the first build, `scripts/signing-identity.sh`
-creates a self-signed code-signing certificate in its own keychain
-(`~/Library/Keychains/macsnap-signing.keychain-db`). Your login keychain is
-untouched, and nothing is trusted system-wide. Every build is signed with that
-certificate, so your permissions survive rebuilds. To remove it:
-`security delete-keychain ~/Library/Keychains/macsnap-signing.keychain-db`.
+```bash
+rm -rf /Applications/MacSnap.app ~/.local/bin/macsnap \
+  ~/.config/macsnap "$HOME/Library/Application Support/MacSnap" ~/Library/Logs/MacSnap
+defaults delete dev.smr.macsnap
+tccutil reset ScreenCapture dev.smr.macsnap
+tccutil reset Accessibility dev.smr.macsnap
+```
+
+Your screenshots in `~/Pictures/Screenshots` are left alone.
 
 ## Hotkeys
 
@@ -239,8 +261,17 @@ Existing names get `-2`, `-3`, and so on. Environment overrides:
 
 ## Troubleshooting
 
-MacSnap writes a plain-text developer log to
-`~/Library/Logs/MacSnap/macsnap.log`, including timings for each OCR run.
+- **"MacSnap can't be opened" or "Apple could not verify…"**: see step 2 of
+  [Install](#install).
+- **The hotkey opens the welcome window instead of capturing**: Screen
+  Recording isn't in effect yet. Choose **Welcome & Setup…** from the menu bar
+  icon, make sure MacSnap is switched on, then click **Quit & Reopen MacSnap**.
+- **A hotkey clashes with another app**: MacSnap shows an alert naming it.
+  Pick another in the config (see [Hotkeys](#hotkeys)).
+
+MacSnap writes a plain-text log to `~/Library/Logs/MacSnap/macsnap.log`,
+including timings for each OCR run. Attach it when you
+[report a problem](https://github.com/smrdotgg/macsnap/issues).
 
 OCR uses Vision's fast recognizer on purpose. On macOS 27.0.1 the accurate
 recognizer takes about 28 s on its first use in a process, blocking all other
@@ -248,13 +279,38 @@ text recognition meanwhile, and then fails every later request with a Neural
 Engine (`e5rt`) error. Small captures are enlarged before recognition, which
 recovers most of the small text the fast recognizer would otherwise miss.
 
-## Development
+## Build from source
+
+Requirements: an Apple silicon Mac on macOS 27 or later, and the Xcode
+command-line tools (Swift 6.4).
+
+```bash
+git clone https://github.com/smrdotgg/macsnap && cd macsnap
+make install
+```
+
+This builds a release `MacSnap.app`, installs it to `~/Applications`, adds the
+`macsnap` command to `~/.local/bin`, and launches it.
+
+### Why there's a "MacSnap Local Signing" keychain
+
+macOS ties privacy permissions to an app's code signature. An ad-hoc
+signature changes with every build, so each rebuild would lose your Screen
+Recording permission. On the first build, `scripts/signing-identity.sh`
+creates a self-signed code-signing certificate in its own keychain
+(`~/Library/Keychains/macsnap-signing.keychain-db`). Your login keychain is
+untouched, and nothing is trusted system-wide. Every build is signed with that
+certificate, so your permissions survive rebuilds. To remove it:
+`security delete-keychain ~/Library/Keychains/macsnap-signing.keychain-db`.
+
+### Development
 
 ```bash
 make test        # core unit tests (op log, cuts, renderer, stitcher, config, recents)
 make snapshots   # render the real views offscreen with synthesized input → .build/ui-snapshots
 make app         # dist/MacSnap.app
 make install
+make release     # dist/MacSnap-<version>.dmg and .zip (see "Releasing")
 ```
 
 - `Sources/MacSnapCore`: the pure, headless-testable parts. That's the document
@@ -267,6 +323,17 @@ make install
 The editing model is the same as Omasnap's. The operation log is the source of
 truth, and what's on screen is a pure function of it. Redaction destroys
 pixels at render time. Cuts are recomposed from the untouched source.
+
+### Releasing
+
+1. Bump `VERSION` and add a section to `CHANGELOG.md`, then commit.
+2. `make release`. It refuses to package uncommitted or ad-hoc-signed builds.
+3. Tag, push, and create the GitHub release with the command it prints.
+
+Releases must be signed with the same "MacSnap Local Signing" certificate
+every time, or everyone has to grant Screen Recording again after updating.
+Keep a backup of `~/Library/Keychains/macsnap-signing.keychain-db` somewhere
+safe and out of the repo.
 
 ## Credits
 

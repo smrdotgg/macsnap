@@ -120,6 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             run(pending)
+            // First launch, or no permission yet: explain the setup. A
+            // capture command without permission shows it on its own.
+            if case .idle = pending,
+               !UserDefaults.standard.bool(forKey: WelcomeWindow.seenKey) || !ScreenCapture.hasPermission {
+                WelcomeWindow.show()
+            }
         }
     }
 
@@ -144,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if q["save"] == "1" { args.append("--save") }
         case "clipboard": args.append("--clipboard")
         case "open": if let p = q["path"] { args += ["--file", p] }
+        #if DEBUG
         case "debug-ocr":
             // Developer hook: OCR an image inside the running app, results to the dev log.
             guard let p = q["path"], let loaded = ImageFiles.load(url: URL(fileURLWithPath: p)) else {
@@ -162,6 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return
+        #endif
         default: return
         }
         MainActor.assumeIsolated {

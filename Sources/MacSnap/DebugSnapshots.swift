@@ -109,7 +109,25 @@ enum DebugSnapshots {
 
         // 6. Export.
         if let flat = shot.flat { try? ImageFiles.writePNG(flat, scale: 2, to: dir.appendingPathComponent("13-export.png")) }
-        // 7. OCR through the app's own code path (with its model fallback).
+        // 7. Welcome window, before and after permission.
+        if NSApp.applicationIconImage?.name() == NSImage.applicationIconName || Bundle.main.bundleURL.pathExtension != "app",
+           let icon = NSImage(contentsOf: URL(fileURLWithPath: "Resources/AppIcon.icns")) {
+            NSApp.applicationIconImage = icon
+        }
+        for (granted, look) in [(false, NSAppearance.Name.aqua), (true, .darkAqua)] {
+            let w = WelcomeView(hotkeys: ["capture": "cmd+shift+2", "scroll": "cmd+shift+1"])
+            w.permissionOverride = granted
+            w.refresh()
+            let backed = Backed(frame: CGRect(origin: .zero, size: w.fittingSize))
+            w.frame = backed.bounds
+            backed.addSubview(w)
+            let win = NSWindow(contentRect: backed.frame, styleMask: [.titled], backing: .buffered, defer: true)
+            win.appearance = NSAppearance(named: look)
+            win.contentView = backed
+            win.layoutIfNeeded()
+            save(backed, dir, granted ? "15-welcome-granted-dark" : "14-welcome")
+        }
+        // 8. OCR through the app's own code path (with its model fallback).
         final class Box: @unchecked Sendable { var lines: Int?; var error: String?; var done = false }
         let box = Box()
         let ocrImage = image
@@ -167,6 +185,14 @@ enum DebugSnapshots {
             return
         }
         v.keyDown(with: e)
+    }
+}
+
+/// Paints the window background so offscreen captures of controls are legible.
+private final class Backed: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
     }
 }
 

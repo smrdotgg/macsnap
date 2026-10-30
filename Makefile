@@ -1,4 +1,4 @@
-.PHONY: build test app install snapshots check clean
+.PHONY: build test app install release snapshots check clean
 
 build:
 	swift build
@@ -11,6 +11,10 @@ app:
 
 install:
 	scripts/install.sh
+
+# dist/MacSnap-<version>.dmg and .zip, signed like every other release.
+release:
+	scripts/release.sh
 
 # Renders the real views offscreen with synthesized input into build/ui-snapshots.
 snapshots: build
