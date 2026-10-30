@@ -95,6 +95,10 @@ certificate, so your permissions survive rebuilds. To remove it:
 
 Press the same hotkey again to dismiss an open overlay. You can change these
 or add more (annotate, region, window, fullscreen, clipboard) in the config.
+Keys can be letters, digits, `f1`–`f19`, `space`, or punctuation such as
+`cmd+.`. Once the config has a `[hotkeys]` section, that section is the
+complete list: comment a line out to turn that hotkey off. If a hotkey can't
+be parsed or is already taken, MacSnap shows an alert saying which one.
 `⌘⇧3/4/5` belong to macOS. To use one of them, turn off the system shortcut
 first under System Settings › Keyboard › Keyboard Shortcuts › Screenshots.
 

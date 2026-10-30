@@ -42,19 +42,37 @@ final class AppController: NSObject, NSMenuDelegate {
         cleanRuntimeDir()
     }
 
+    /// Loads the config and registers hotkeys; problems are logged and,
+    /// when there are any, shown so a typo never fails silently.
     func reloadConfig() {
-        let (cfg, warnings) = Config.load()
+        let (cfg, configWarnings) = Config.load()
         config = cfg
-        for w in warnings { NSLog("MacSnap config: \(w)") }
+        var warnings = configWarnings
         let saved = UserDefaults.standard.string(forKey: "color").flatMap { RGBA(hex: $0) }
         toolSettings = ToolSettings(color: saved ?? cfg.palette.first ?? RGBA.defaultPalette[0], palette: cfg.palette, customColor: cfg.customColor)
         customBackground = cfg.backgroundImage.flatMap { ImageFiles.load(url: $0)?.image }
         if customBackground == nil, config.defaultBackground == .custom { config.defaultBackground = .off }
-        registerHotkeys()
+        warnings += registerHotkeys()
         rebuildMenu()
+        DevLog.write("config loaded from \(Config.defaultPath.path): hotkeys \(config.hotkeys.sorted { $0.key < $1.key })")
+        for w in warnings { DevLog.write("config problem: \(w)") }
+        if !warnings.isEmpty {
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = "MacSnap configuration problems"
+                alert.informativeText = warnings.map { "• \($0)" }.joined(separator: "\n")
+                    + "\n\nFix them in \(Config.defaultPath.path), then choose Reload Configuration."
+                alert.addButton(withTitle: "Edit Configuration")
+                alert.addButton(withTitle: "OK")
+                NSApp.activate(ignoringOtherApps: true)
+                if alert.runModal() == .alertFirstButtonReturn { AppController.shared.editConfig() }
+            }
+        }
     }
 
-    private func registerHotkeys() {
+    /// Registers the configured hotkeys; returns a message per failure.
+    private func registerHotkeys() -> [String] {
+        var problems: [String] = []
         HotKeys.shared.unregisterAll()
         let actions: [String: CaptureRequest] = [
             "capture": CaptureRequest(mode: .smart),
@@ -64,23 +82,25 @@ final class AppController: NSObject, NSMenuDelegate {
             "fullscreen": CaptureRequest(mode: .fullscreen),
             "annotate": CaptureRequest(mode: .smart, annotate: true),
         ]
-        for (name, combo) in config.hotkeys where !combo.isEmpty {
+        for (name, combo) in config.hotkeys.sorted(by: { $0.key < $1.key }) where !combo.isEmpty {
+            let action: () -> Void
             if name == "clipboard" {
-                if let c = HotKeys.parse(combo) { HotKeys.shared.register(c) { AppController.shared.openClipboard(editorMode: nil) } }
-                continue
-            }
-            guard let req = actions[name] else {
-                NSLog("MacSnap: unknown hotkey action \(name)")
+                action = { AppController.shared.openClipboard(editorMode: nil) }
+            } else if let req = actions[name] {
+                action = { AppController.shared.capture(req) }
+            } else {
+                problems.append("[hotkeys] \(name): unknown action (use capture, annotate, scroll, region, window, fullscreen or clipboard)")
                 continue
             }
             guard let c = HotKeys.parse(combo) else {
-                NSLog("MacSnap: cannot parse hotkey \(combo)")
+                problems.append("[hotkeys] \(name) = \(combo): not a key combination MacSnap understands")
                 continue
             }
-            if !HotKeys.shared.register(c, action: { AppController.shared.capture(req) }) {
-                NSLog("MacSnap: hotkey \(combo) is taken by another app")
+            if !HotKeys.shared.register(c, action: action) {
+                problems.append("[hotkeys] \(name) = \(combo): already taken by macOS or another app")
             }
         }
+        return problems
     }
 
     private func cleanRuntimeDir() {
@@ -177,7 +197,7 @@ final class AppController: NSObject, NSMenuDelegate {
         menu.items.last?.keyEquivalent = "q"
     }
 
-    private func editConfig() {
+    func editConfig() {
         let url = Config.defaultPath
         let fm = FileManager.default
         if !fm.fileExists(atPath: url.path) {
@@ -193,9 +213,10 @@ final class AppController: NSObject, NSMenuDelegate {
     # Use "Reload Configuration" from the menu bar after editing.
 
     [hotkeys]
-    # Combos: cmd, shift, alt (option), ctrl + a key (a–z, 0–9, f1–f19, space…).
-    # Leave a value empty to disable. Available actions: capture, annotate,
-    # scroll, region, window, fullscreen, clipboard.
+    # Combos: cmd, shift, alt (option), ctrl + a key: a–z, 0–9, f1–f19, space,
+    # or punctuation such as . , / ; [ ]  (e.g. cmd+.). This section is the
+    # complete list: a commented-out or empty line means no hotkey for it.
+    # Actions: capture, annotate, scroll, region, window, fullscreen, clipboard.
     capture = cmd+shift+2
     scroll = cmd+shift+1
     # annotate = cmd+shift+3

@@ -190,7 +190,10 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.palette.count, 2)
         XCTAssertEqual(c.defaultBackground, .aurora)
         XCTAssertEqual(c.hotkeys["capture"], "ctrl+alt+s")
-        XCTAssertEqual(c.hotkeys["scroll"], "cmd+shift+1")
+        XCTAssertNil(c.hotkeys["scroll"], "a [hotkeys] section replaces the defaults")
+        var d = Config()
+        d.apply(ini: "[output]\nautosave = true\n")
+        XCTAssertEqual(d.hotkeys["scroll"], "cmd+shift+1", "no [hotkeys] section keeps the defaults")
     }
 
     func testFilenameExpansion() {

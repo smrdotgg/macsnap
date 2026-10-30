@@ -107,8 +107,10 @@ public struct Config: Sendable {
             }
         }
         if let p = ini["preview"], let v = p["seconds"], let s = Double(v) { previewSeconds = max(1, s) }
+        // A [hotkeys] section is the complete list: anything absent,
+        // commented out or left empty is off.
         if let h = ini["hotkeys"] {
-            for (k, v) in h { hotkeys[k] = v }
+            hotkeys = h.filter { !$0.value.isEmpty }
         }
         return warnings
     }

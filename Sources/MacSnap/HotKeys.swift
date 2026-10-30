@@ -69,6 +69,16 @@ final class HotKeys {
         "comma": kVK_ANSI_Comma, "semicolon": kVK_ANSI_Semicolon, "quote": kVK_ANSI_Quote,
         "grave": kVK_ANSI_Grave, "backslash": kVK_ANSI_Backslash,
         "leftbracket": kVK_ANSI_LeftBracket, "rightbracket": kVK_ANSI_RightBracket,
+        // The characters themselves work too: cmd+. cmd+/ alt+[ …
+        ".": kVK_ANSI_Period, ",": kVK_ANSI_Comma, "/": kVK_ANSI_Slash, ";": kVK_ANSI_Semicolon,
+        "'": kVK_ANSI_Quote, "`": kVK_ANSI_Grave, "\\": kVK_ANSI_Backslash, "-": kVK_ANSI_Minus,
+        "=": kVK_ANSI_Equal, "[": kVK_ANSI_LeftBracket, "]": kVK_ANSI_RightBracket,
+    ]
+
+    /// Named keys as the character a menu shows.
+    static let keyCharacters: [String: String] = [
+        "period": ".", "comma": ",", "slash": "/", "semicolon": ";", "quote": "'", "grave": "`",
+        "backslash": "\\", "minus": "-", "equal": "=", "leftbracket": "[", "rightbracket": "]", "space": " ",
     ]
 
     static func parse(_ text: String) -> Combo? {
@@ -94,7 +104,7 @@ final class HotKeys {
     /// For NSMenuItem key equivalents.
     static func menuEquivalent(_ text: String) -> (String, NSEvent.ModifierFlags)? {
         let parts = text.lowercased().split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let key = parts.last, key.count == 1 else { return nil }
+        guard let name = parts.last, let key = name.count == 1 ? name : keyCharacters[name] else { return nil }
         var flags: NSEvent.ModifierFlags = []
         for p in parts.dropLast() {
             switch p {
