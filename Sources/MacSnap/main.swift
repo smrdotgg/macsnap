@@ -101,13 +101,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var pending: Command = .idle
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before any open-file/URL events can arrive.
+        MainActor.assumeIsolated {
+            installMainMenu()
+            AppController.shared.start()
+        }
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
-            AppController.shared.start()
             DistributedNotificationCenter.default().addObserver(forName: commandNotification, object: bundleId, queue: .main) { note in
                 guard let args = note.userInfo?["args"] as? [String], let cwd = note.userInfo?["cwd"] as? String else { return }
                 MainActor.assumeIsolated {
@@ -145,6 +149,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let cmd = try? parse(args, cwd: NSHomeDirectory()) { run(cmd) }
         }
     }
+}
+
+/// A hidden main menu: text views need its Edit items for ⌘C/⌘V/⌘X/⌘A/⌘Z.
+@MainActor
+func installMainMenu() {
+    let main = NSMenu()
+    let appItem = NSMenuItem()
+    appItem.submenu = NSMenu(title: "MacSnap")
+    main.addItem(appItem)
+    let editItem = NSMenuItem()
+    let edit = NSMenu(title: "Edit")
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+    redo.keyEquivalentModifierMask = [.command, .shift]
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    editItem.submenu = edit
+    main.addItem(editItem)
+    NSApp.mainMenu = main
 }
 
 // MARK: Entry
@@ -190,7 +216,8 @@ if !args.isEmpty {
 }
 
 let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).filter { $0.processIdentifier != getpid() }
-if !others.isEmpty {
+// A relaunch we started ourselves never forwards back to the (exiting) CLI process.
+if !others.isEmpty, !launchedByUs {
     // One instance: hand the command to it (a capture toggles its overlay).
     if !args.isEmpty {
         DistributedNotificationCenter.default().postNotificationName(commandNotification, object: bundleId,
@@ -210,7 +237,7 @@ if !args.isEmpty, !launchedByUs, isBundled {
     }
     cfg.arguments = [launchedMarker] + forwarded
     cfg.activates = false
-    cfg.createsNewApplicationInstance = false
+    cfg.createsNewApplicationInstance = true
     let sema = DispatchSemaphore(value: 0)
     NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: cfg) { _, error in
         if let error { FileHandle.standardError.write("macsnap: \(error.localizedDescription)\n".data(using: .utf8)!) }

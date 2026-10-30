@@ -28,6 +28,7 @@ final class HUDButton: NSView {
     override func mouseEntered(with event: NSEvent) { hover = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hover = false; needsDisplay = true }
     override func cursorUpdate(with event: NSEvent) { NSCursor.pointingHand.set() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func mouseDown(with event: NSEvent) {
         guard enabled else { return }

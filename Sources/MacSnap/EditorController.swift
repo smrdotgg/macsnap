@@ -40,8 +40,10 @@ final class EditorController: NSObject, NSWindowDelegate {
     var onSettings: ((ToolSettings) -> Void)?
     var onChange: ((EditorController) -> Void)?
     var onScrollCapture: ((EditorController) -> Void)?
+    var onPresentationChange: (() -> Void)?
     private var finished = false
     private var changeWork: DispatchWorkItem?
+    private var savePanel: NSSavePanel?
 
     init(shot: Shot, screen: NSScreen, presentation: Config.EditorMode, native: Bool, settings: ToolSettings, customBackground: CGImage?) {
         self.shot = shot
@@ -101,9 +103,11 @@ final class EditorController: NSObject, NSWindowDelegate {
     func togglePresentation() {
         let doc = view.document
         settings = view.settings
+        NSColorPanel.shared.orderOut(nil) // it targets the view being replaced
         let old = window!
         presentation = presentation == .overlay ? .window : .overlay
         buildWindow(document: doc, placeNative: false)
+        onPresentationChange?()
         old.delegate = nil
         old.orderOut(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -112,7 +116,7 @@ final class EditorController: NSObject, NSWindowDelegate {
     }
 
     func perform(_ action: EditorAction) {
-        guard !finished else { return }
+        guard !finished, savePanel == nil else { return }
         if action == .saveAs {
             runSaveAs()
             return
@@ -132,7 +136,9 @@ final class EditorController: NSObject, NSWindowDelegate {
         panel.directoryURL = cfg.directory
         panel.nameFieldStringValue = cfg.outputURL(app: shot.app).lastPathComponent
         panel.level = NSWindow.Level(rawValue: window.level.rawValue + 1)
+        savePanel = panel
         panel.begin { [weak self] resp in
+            self?.savePanel = nil
             guard let self, resp == .OK, var url = panel.url else { return }
             if url.pathExtension.isEmpty { url.appendPathExtension("png") }
             guard url.pathExtension.lowercased() == "png" else {
@@ -152,12 +158,17 @@ final class EditorController: NSObject, NSWindowDelegate {
 
     func close() {
         finished = true
+        savePanel?.cancel(nil)
+        savePanel = nil
         window.delegate = nil
         window.orderOut(nil)
         NSColorPanel.shared.orderOut(nil)
     }
 
+    /// Commits any label being typed; for outputs.
     var currentDocument: SnapDocument { view.document }
+    /// Leaves a label being typed alone; for autosave.
+    var committedDocument: SnapDocument { view.committedDocument }
 
     func documentChanged() {
         changeWork?.cancel()

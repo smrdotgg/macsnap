@@ -21,8 +21,8 @@ operation log. Nothing is flattened until you copy, save or pin.
   size in native pixels, so any drag doubles as a ruler. `Tab` cycles the area
   shape (free, 1:1, 3:4, 16:9).
 - **Previews and pins**: captures stack as a tilted deck in the bottom-right
-  corner and fan out on hover. Pin one with the pin button or `T` (dragging a
-  card also pins it). Pins stay until closed. Your own previews never show up
+  corner and fan out on hover. Pin one with the pin button (dragging a card
+  also pins it). Pins stay until closed. Your own previews never show up
   in later captures.
 - **Annotation editor**, as a full-screen overlay or a normal window (`W`
   switches between them):
@@ -177,17 +177,18 @@ button for backdrops, canvas growth, and *Scroll capture this area…*.
 | Input | Action |
 |---|---|
 | Hover | Fan the stack out; pause the countdown |
-| Pin button, `T` | Keep on screen (again: unpin) |
-| Drag the card | Move it (this also pins it); drop it near the stack to reorder |
+| Pin button | Keep on screen (again: unpin and restart the countdown) |
+| Drag the card | Move it (this also pins it); drop it on the stack to reorder |
 | Six-dot handle | Drag the PNG into another app or Finder |
-| Edit, `A`/`E` | Annotate |
-| Copy, `C`, `⌘C` | Copy the full-resolution PNG |
-| Link, `L` | Copy the file path (saves the file first if needed) |
-| Folder, `R` | Reveal in Finder |
-| `×`, `X`, `Esc`, middle-click | Close |
+| Edit | Annotate; `Esc` in the editor updates this same card |
+| Copy | Copy the full-resolution PNG |
+| Link | Copy the file path (saves the file first if needed) |
+| Folder | Reveal in Finder |
+| `×`, middle-click | Close |
 
-The keyboard shortcuts work once you've clicked the card. MacSnap doesn't take
-keyboard focus from your app just because the pointer passes over a card.
+Unlike Omasnap, cards have no keyboard shortcuts. A card never takes keyboard
+focus, so clicking **Copy** and then pressing `⌘V` pastes into the app you're
+working in.
 
 ## Configuration (optional)
 

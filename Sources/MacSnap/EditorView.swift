@@ -48,6 +48,7 @@ final class EditorView: NSView, NSTextViewDelegate {
     private var coalesce: (token: String, time: Date)?
     private var ocrPanel: OCRPanel?
     private var hideHandles = false
+    private var wheelAccum: CGFloat = 0
     private var lastClickSelectedId: Int?
 
     init(frame: CGRect, document: SnapDocument, settings: ToolSettings, overlay: Bool, customBackground: CGImage?) {
@@ -73,6 +74,21 @@ final class EditorView: NSView, NSTextViewDelegate {
     var document: SnapDocument {
         commitText(dismissAfter: false)
         return doc
+    }
+
+    /// The committed document, leaving any label being typed alone (autosave).
+    var committedDocument: SnapDocument { doc }
+    var isEditingText: Bool { textEditor != nil }
+
+    // Standard responder actions, reached through the Edit menu's key equivalents.
+    @objc func undo(_ sender: Any?) { undo() }
+    @objc func redo(_ sender: Any?) { redo() }
+    @objc func copy(_ sender: Any?) { controller?.perform(.copy) }
+    @objc override func selectAll(_ sender: Any?) {
+        setTool(.select)
+        selection = Set(doc.state.annotations.map(\.id))
+        toolbar.refresh()
+        needsDisplay = true
     }
 
     // MARK: Coordinates
@@ -509,6 +525,7 @@ final class EditorView: NSView, NSTextViewDelegate {
     }
 
     func redo() {
+        commitText(dismissAfter: false)
         doc.redo()
         coalesce = nil
         changed()
@@ -699,7 +716,8 @@ final class EditorView: NSView, NSTextViewDelegate {
             b.color = c
             return .update(b)
         }
-        if !ops.isEmpty { commit(.group(ops)) }
+        // The system color panel is continuous: one undo step per gesture.
+        if !ops.isEmpty { commitCoalesced(.group(ops), token: "color-\(selection.sorted())") }
         if let ed = textEditor {
             var a = ed.annotation
             a.color = c
@@ -806,7 +824,11 @@ final class EditorView: NSView, NSTextViewDelegate {
 
     private func updateCursor() {
         if spaceDown { NSCursor.openHand.set(); return }
-        if hideHandles { NSCursor.hide(); return }
+        if hideHandles { return }
+        if toolbar.frame.contains(pointer) || ocrPanel?.frame.contains(pointer) == true {
+            NSCursor.arrow.set()
+            return
+        }
         switch tool {
         case .select:
             let v = pointer
@@ -1122,6 +1144,7 @@ final class EditorView: NSView, NSTextViewDelegate {
     }
 
     override func otherMouseDown(with e: NSEvent) {
+        guard case .none = drag else { return }
         drag = .pan(startView: loc(e), startPan: pan)
         NSCursor.closedHand.set()
     }
@@ -1157,27 +1180,40 @@ final class EditorView: NSView, NSTextViewDelegate {
         let v = loc(e)
         let p = toSource(v)
         let precise = e.hasPreciseScrollingDeltas
-        let dy = precise ? e.scrollingDeltaY / 12 : e.scrollingDeltaY
         let flags = e.modifierFlags
         if flags.contains(.command) || flags.contains(.control) {
+            let dy = precise ? e.scrollingDeltaY / 40 : e.scrollingDeltaY
             setZoom(zoom * pow(1.12, dy), about: v)
             return
         }
-        if flags.contains(.shift), !precise {
-            pan.x += e.scrollingDeltaY * 12
+        func panBy() {
+            pan.y += precise ? e.scrollingDeltaY : e.scrollingDeltaY * 12
+            pan.x += precise ? e.scrollingDeltaX : e.scrollingDeltaX * 12
+            if flags.contains(.shift), !precise { pan.x += e.scrollingDeltaY * 12; pan.y -= e.scrollingDeltaY * 12 }
             viewChanged()
-            return
         }
-        guard abs(dy) > 0.01 else {
-            if precise { pan.x += e.scrollingDeltaX; viewChanged() }
-            return
+        // Wheel steps act on layers and tools; trackpads accumulate into steps
+        // and their momentum never scales anything.
+        let wantsSteps = flags.contains(.option) || !selection.isEmpty || tool.creates
+            || displayState.annotations.contains { $0.kind == .spotlight && $0.rect.standardized.contains(p) }
+        guard wantsSteps, !flags.contains(.shift) else { return panBy() }
+        if precise {
+            if e.momentumPhase != [] { return }
+            if e.phase == .began { wheelAccum = 0 }
+            guard abs(e.scrollingDeltaY) >= abs(e.scrollingDeltaX) else { return }
+            wheelAccum += e.scrollingDeltaY
+            guard abs(wheelAccum) >= 10 else { return }
+        } else {
+            wheelAccum = e.scrollingDeltaY
+            guard abs(wheelAccum) > 0.01 else { return }
         }
-        let step: CGFloat = dy > 0 ? 1 : -1
+        let step: CGFloat = wheelAccum > 0 ? 1 : -1
+        wheelAccum = 0
         if flags.contains(.option) {
             altWheel(step, at: p)
             return
         }
-        if !selection.isEmpty, !precise || abs(e.scrollingDeltaY) > abs(e.scrollingDeltaX) {
+        if !selection.isEmpty {
             let k = pow(1.06, step)
             let ops = selection.compactMap { doc.state.annotation($0) }.map { EditOp.update(Geometry.scaled($0, by: k)) }
             commitCoalesced(.group(ops), token: "scale-\(selection.sorted())")
@@ -1200,10 +1236,7 @@ final class EditorView: NSView, NSTextViewDelegate {
             controller?.rememberSettings(settings)
             return
         }
-        // Just viewing: scroll a zoomed capture like a document.
-        pan.y += precise ? e.scrollingDeltaY : e.scrollingDeltaY * 12
-        pan.x += precise ? e.scrollingDeltaX : e.scrollingDeltaX * 12
-        viewChanged()
+        panBy()
     }
 
     private func altWheel(_ step: CGFloat, at p: CGPoint) {
@@ -1522,7 +1555,10 @@ final class EditorView: NSView, NSTextViewDelegate {
         lastAppliedTextZoom = 0
         var a = ed.annotation
         a.text = ed.view.string.trimmingCharacters(in: .newlines)
-        ed.view.removeFromSuperview()
+        let tv = ed.view
+        tv.isHidden = true
+        tv.delegate = nil
+        DispatchQueue.main.async { tv.removeFromSuperview() }
         liveNew = nil
         liveOverrides[a.id] = nil
         window?.makeFirstResponder(self)

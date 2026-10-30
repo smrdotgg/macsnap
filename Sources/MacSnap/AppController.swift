@@ -292,8 +292,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 completeSelection(CaptureSelection(rect: CGRect(origin: .zero, size: snap.size), app: nil), snap: snap, req: req, annotate: req.annotate || req.editorMode != nil)
                 return
             }
-            let o = CaptureOverlay(snap: snap, mode: req.mode, annotate: req.annotate || req.editorMode != nil, recents: recentCards) { [weak self] outcome in
-                guard let self else { return }
+            let o = CaptureOverlay(snap: snap, mode: req.mode, annotate: req.annotate || req.editorMode != nil, recents: recentCards) { outcome in
                 self.overlay = nil
                 switch outcome {
                 case .cancelled:
@@ -407,8 +406,8 @@ final class AppController: NSObject, NSMenuDelegate {
             UserDefaults.standard.set(s.color.hex, forKey: "color")
         }
         ed.onChange = { [weak self] ed in
-            ed.shot.document = ed.currentDocument
-            self?.persist(ed.shot, render: false)
+            ed.shot.document = ed.committedDocument
+            self?.persist(ed.shot, rerender: true)
         }
         ed.onScrollCapture = { [weak self] ed in
             guard let self, let screen = ed.shot.screen else { return }
@@ -417,13 +416,23 @@ final class AppController: NSObject, NSMenuDelegate {
             self.startScroll(screen: screen, region: crop, annotate: true, req: CaptureRequest())
         }
         editors.append(ed)
+        ed.onPresentationChange = { [weak self] in self?.updateActivationPolicy() }
+        updateActivationPolicy()
         ed.show()
+    }
+
+    /// Window-mode editors get a Dock icon and ⌘-Tab entry while open.
+    private func updateActivationPolicy() {
+        let wantsDock = editors.contains { $0.presentation == .window }
+        let policy: NSApplication.ActivationPolicy = wantsDock ? .regular : .accessory
+        if NSApp.activationPolicy() != policy { NSApp.setActivationPolicy(policy) }
     }
 
     private func closeEditor(_ ed: EditorController) {
         ed.close()
         ed.originCard?.busy -= 1
         editors.removeAll { $0 === ed }
+        updateActivationPolicy()
         restoreFocusIfIdle()
     }
 
@@ -453,7 +462,7 @@ final class AppController: NSObject, NSMenuDelegate {
                     }
                 }
             } else {
-                persist(shot)
+                persist(shot, rerender: true)
             }
             return
         }
@@ -560,7 +569,7 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Recents
 
     /// Keeps the shot on the recents shelf (source + log + thumbnail), off the main thread.
-    func persist(_ shot: Shot, render: Bool = true) {
+    func persist(_ shot: Shot, rerender: Bool = false) {
         let doc = shot.document
         let flat = shot.flat
         let meta = RecentStore.Meta(app: shot.app, savedPath: shot.savedURL?.path, date: Date())
@@ -569,7 +578,7 @@ final class AppController: NSObject, NSMenuDelegate {
         let custom = customBackground
         DispatchQueue.global(qos: .utility).async {
             var image = flat
-            if image == nil || !render {
+            if image == nil || rerender {
                 let composed = CaptureRenderer.composeCuts(doc.source, scale: doc.scale, cuts: doc.state.cuts)
                 image = CaptureRenderer.render(source: composed, scale: doc.scale, state: doc.state, customBackground: custom)
             }
@@ -585,6 +594,11 @@ final class AppController: NSObject, NSMenuDelegate {
     // MARK: Errors
 
     func showError(_ title: String, _ detail: String) {
+        // A modal alert would sit invisibly behind a full-screen editor.
+        if let ed = editors.last {
+            ed.view.flash("\(title): \(detail)", seconds: 4)
+            return
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = detail

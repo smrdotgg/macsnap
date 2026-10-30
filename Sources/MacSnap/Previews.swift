@@ -181,33 +181,11 @@ final class PreviewCard: NSObject {
     }
 }
 
+/// Cards never take keyboard focus: a click on Copy must leave ⌘V going to
+/// the app the user is pasting into.
 final class PreviewPanel: KeyPanel {
     weak var card: PreviewCard?
-
-    override func keyDown(with e: NSEvent) {
-        guard let card else { return }
-        let cmd = e.modifierFlags.contains(.command)
-        let ch = e.charactersIgnoringModifiers?.lowercased() ?? ""
-        if e.keyCode == 53 { card.close(); return }
-        if cmd {
-            switch ch {
-            case "c": card.copyImage()
-            case "p": card.togglePin()
-            case "w": card.close()
-            default: super.keyDown(with: e)
-            }
-            return
-        }
-        switch ch {
-        case "t": card.togglePin()
-        case "a", "e": card.edit()
-        case "l", "f": card.copyPath()
-        case "r": card.reveal()
-        case "c": card.copyImage()
-        case "x": card.close()
-        default: super.keyDown(with: e)
-        }
-    }
+    override var canBecomeKey: Bool { false }
 }
 
 final class PreviewCardView: NSView, NSDraggingSource {
@@ -227,14 +205,14 @@ final class PreviewCardView: NSView, NSDraggingSource {
         super.init(frame: frame)
         autoresizesSubviews = false
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-        let edit = HUDButton(symbol: "square.and.pencil", tip: "Annotate · A", size: CGSize(width: 76, height: 30)) { [weak self] in self?.card?.edit() }
+        let edit = HUDButton(symbol: "square.and.pencil", tip: "Annotate", size: CGSize(width: 76, height: 30)) { [weak self] in self?.card?.edit() }
         edit.label = "Edit"
-        let copy = HUDButton(symbol: "doc.on.doc", tip: "Copy · C", size: CGSize(width: 80, height: 30)) { [weak self] in self?.card?.copyImage() }
+        let copy = HUDButton(symbol: "doc.on.doc", tip: "Copy the full-resolution PNG", size: CGSize(width: 80, height: 30)) { [weak self] in self?.card?.copyImage() }
         copy.label = "Copy"
-        pinButton = HUDButton(symbol: "pin", tip: "Keep on screen · T", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.togglePin() }
-        let close = HUDButton(symbol: "xmark", tip: "Close · X", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.close() }
-        let link = HUDButton(symbol: "link", tip: "Copy file path · L", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.copyPath() }
-        let folder = HUDButton(symbol: "folder", tip: "Show in Finder · R", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.reveal() }
+        pinButton = HUDButton(symbol: "pin", tip: "Keep on screen", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.togglePin() }
+        let close = HUDButton(symbol: "xmark", tip: "Close", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.close() }
+        let link = HUDButton(symbol: "link", tip: "Copy file path", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.copyPath() }
+        let folder = HUDButton(symbol: "folder", tip: "Show in Finder", size: CGSize(width: 26, height: 26)) { [weak self] in self?.card?.reveal() }
         controls = [edit, copy, pinButton, close, link, folder]
         controls.forEach { addSubview($0) }
         updateControls()
@@ -362,7 +340,6 @@ final class PreviewCardView: NSView, NSDraggingSource {
     }
 
     override func mouseDown(with e: NSEvent) {
-        window?.makeKey()
         let p = convert(e.locationInWindow, from: nil)
         if hovered, handleRect.contains(p) {
             startFileDrag(e)
@@ -454,10 +431,10 @@ final class PreviewStack {
 
     func remove(_ card: PreviewCard, focusNext: Bool) {
         cards.removeAll { $0 === card }
+        if dragging === card { dragging = nil }
+        // A closed card never gets mouseExited; re-evaluate the fan.
+        hoverChanged()
         relayout(animated: true)
-        if focusNext, let next = cards.first(where: { $0.screen == card.screen && !$0.freePlaced }) {
-            next.panel.makeKey()
-        }
     }
 
     func card(for shotId: String) -> PreviewCard? { cards.first { $0.shot.id == shotId } }
@@ -486,7 +463,7 @@ final class PreviewStack {
     // MARK: Layout
 
     private func stacked(on screen: NSScreen) -> [PreviewCard] {
-        cards.filter { $0.screen == screen && !$0.freePlaced && $0 !== dragging }
+        cards.filter { $0.screen == screen && !$0.freePlaced && ($0 !== dragging || nearStack($0)) }
     }
 
     /// Panel frames for every stacked card on `screen`.
@@ -521,11 +498,12 @@ final class PreviewStack {
 
     func relayout(animated: Bool) {
         let tilts: [CGFloat] = [0, -3, 6, -9, 12, -12, 12]
+        adoptLiveScreens()
         for screen in Set(cards.map(\.screen)) {
             let fr = frames(for: screen)
             let list = stacked(on: screen)
             for (i, c) in list.enumerated() {
-                guard let f = fr[c] else { continue }
+                guard c !== dragging, let f = fr[c] else { continue }
                 c.tilt = fanned ? 0 : tilts[min(i, tilts.count - 1)]
                 if animated, c.panel.frame != f {
                     NSAnimationContext.runAnimationGroup { ctx in
@@ -537,8 +515,9 @@ final class PreviewStack {
                     c.panel.setFrame(f, display: true)
                 }
             }
-            // Newest in front.
-            for c in list.reversed() { c.panel.orderFrontRegardless() }
+            // Newest in front; a dragged card stays on top.
+            for c in list.reversed() where c !== dragging { c.panel.orderFrontRegardless() }
+            dragging?.panel.orderFrontRegardless()
         }
     }
 
@@ -551,8 +530,6 @@ final class PreviewStack {
     }
 
     func dragMoved(_ card: PreviewCard) {
-        // Open an insertion gap where the card would land.
-        guard !card.freePlaced || nearStack(card) else { return }
         reorder(card)
     }
 
@@ -562,34 +539,37 @@ final class PreviewStack {
         return f.midX > vis.maxX - PreviewCard.width * 1.6
     }
 
+    /// Moves `card` in the deck order to where it is being dropped, judged
+    /// against the other cards' resting slots (stable while the gap moves).
     private func reorder(_ card: PreviewCard) {
-        guard nearStack(card) else { return }
-        let list = stacked(on: card.screen)
-        let y = card.panel.frame.minY
-        var idx = list.count
-        let fr = frames(for: card.screen)
-        for (i, c) in list.enumerated() where (fr[c]?.minY ?? 0) > y {
-            idx = i
-            break
+        guard nearStack(card) else {
+            relayout(animated: true)
+            return
         }
+        let others = cards.filter { $0 !== card && $0.screen == card.screen && !$0.freePlaced }
+        let saved = dragging
+        dragging = card
         cards.removeAll { $0 === card }
-        let insertAt: Int
-        if idx < list.count, let anchor = cards.firstIndex(where: { $0 === list[idx] }) { insertAt = anchor } else {
-            insertAt = (list.last.flatMap { l in cards.firstIndex(where: { $0 === l }) }.map { $0 + 1 }) ?? cards.count
-        }
+        let fr = frames(for: card.screen) // slots without the dragged card
+        let y = card.panel.frame.midY
+        let below = others.filter { (fr[$0]?.midY ?? .infinity) < y }.count
+        let anchor = below < others.count ? cards.firstIndex(where: { $0 === others[below] }) : nil
+        let insertAt = anchor ?? (others.last.flatMap { l in cards.firstIndex(where: { $0 === l }) }.map { $0 + 1 } ?? cards.count)
         cards.insert(card, at: min(insertAt, cards.count))
+        dragging = saved
         relayout(animated: true)
     }
 
     func endDrag(_ card: PreviewCard) {
-        dragging = nil
         // Adopt the screen it was dropped on.
         let center = CGPoint(x: card.panel.frame.midX, y: card.panel.frame.midY)
         if let s = NSScreen.screens.first(where: { $0.frame.contains(center) }) { card.screen = s }
         if nearStack(card) {
             card.freePlaced = false
             reorder(card)
+            dragging = nil
         } else {
+            dragging = nil
             card.freePlaced = true
             // Keep it fully inside the usable area.
             let vis = card.screen.visibleFrame.insetBy(dx: Self.gap - PreviewCard.margin, dy: Self.gap - PreviewCard.margin)
@@ -600,5 +580,15 @@ final class PreviewStack {
         }
         hoverChanged()
         relayout(animated: true)
+    }
+
+    /// Cards on a disconnected display move to a live one.
+    private func adoptLiveScreens() {
+        let live = NSScreen.screens
+        for c in cards where !live.contains(where: { $0 === c.screen }) {
+            let id = ScreenCapture.displayID(of: c.screen)
+            c.screen = live.first { ScreenCapture.displayID(of: $0) == id } ?? NSScreen.main ?? live[0]
+            if c.freePlaced, !c.screen.visibleFrame.intersects(c.panel.frame) { c.freePlaced = false }
+        }
     }
 }

@@ -60,10 +60,13 @@ final class ScrollCaptureSession: NSObject {
         frameWindow.orderFrontRegardless()
         positionControls()
         controls.panel.makeKeyAndOrderFront(nil)
-        controls.setStatus("Pick a direction, then scroll the page")
+        controls.setStatus("Preparing…")
+        controls.setRunning(true)
         Task {
             do {
                 grabber = try await ScreenCapture.RegionGrabber(screen: screen, rect: region)
+                controls.setRunning(false)
+                controls.setStatus("Pick a direction, then scroll the page")
             } catch {
                 controls.setStatus(error.localizedDescription)
             }

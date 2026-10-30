@@ -65,7 +65,9 @@ final class CaptureOverlay: NSObject {
         onFinish = nil
         panel.orderOut(nil)
         NSCursor.arrow.set()
-        cb(outcome)
+        // Defer: we may be inside the overlay view's own event handling, and
+        // the callback releases the panel.
+        DispatchQueue.main.async { cb(outcome) }
     }
 
     func cancel() { finish(.cancelled) }
@@ -108,6 +110,7 @@ final class CaptureOverlayView: NSView {
     private var shelfFoldWork: DispatchWorkItem?
     private var tabRects: [(CaptureMode, CGRect)] = []
     private var annotateRect: CGRect = .zero
+    private var tabStripBottom: CGFloat = 0
     private var guideHeaderRect: CGRect = .zero
     private var cardRects: [(Int, CGRect)] = []
 
@@ -126,6 +129,12 @@ final class CaptureOverlayView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .crosshair) }
+
+    /// ⌘A arrives through the Edit menu's key equivalent.
+    @objc override func selectAll(_ sender: Any?) {
+        finish?(.selected(CaptureSelection(rect: bounds, app: nil), annotate: annotate))
+    }
 
     func syncPointer() {
         guard let w = window else { return }
@@ -244,6 +253,7 @@ final class CaptureOverlayView: NSView {
         let h = sizes[0].height + 8
         let top: CGFloat = (window?.screen?.safeAreaInsets.top ?? 0) + 34
         let strip = CGRect(x: bounds.midX - total / 2, y: top, width: total, height: h)
+        tabStripBottom = strip.maxY
         let path = NSBezierPath(roundedRect: strip, xRadius: h / 2, yRadius: h / 2)
         Chrome.surface.setFill(); path.fill()
         Chrome.border.setStroke(); path.stroke()
@@ -301,8 +311,7 @@ final class CaptureOverlayView: NSView {
 
     private func drawGuide() {
         let size = Chrome.shortcutCardSize(Self.shortcuts, columns: 2)
-        let top = (window?.screen?.safeAreaInsets.top ?? 0) + 24
-        let origin = CGPoint(x: bounds.width - size.width - 20, y: top)
+        let origin = CGPoint(x: bounds.width - size.width - 20, y: tabStripBottom + 14)
         // Step aside while the pointer works underneath it.
         if CGRect(origin: origin, size: size).insetBy(dx: -24, dy: -24).contains(pointer) { guideHeaderRect = .zero; return }
         guideHeaderRect = Chrome.drawShortcutCard(Self.shortcuts, origin: origin).header
@@ -406,6 +415,7 @@ final class CaptureOverlayView: NSView {
 
     override func mouseMoved(with e: NSEvent) {
         pointer = loc(e)
+        NSCursor.crosshair.set()
         setShelfOpen(shelfContains(pointer))
         updateHover()
         needsDisplay = true
