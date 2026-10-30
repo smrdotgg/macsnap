@@ -205,6 +205,10 @@ final class AppController: NSObject, NSMenuDelegate {
     # overlay (default): the editor fills the screen; window: a normal window.
     # W switches a live editor between the two.
     mode = overlay
+    # Annotations past the capture's edge: overflow (default) grows the canvas
+    # with transparent space; framed adds a light-gray mat; image clips them.
+    # G cycles these in the editor.
+    canvas = overflow
 
     [output]
     # Save fresh captures as well as copying them. Default: true.
@@ -319,7 +323,7 @@ final class AppController: NSObject, NSMenuDelegate {
     }
 
     private func completeSelection(_ sel: CaptureSelection, snap: ScreenSnapshot, req: CaptureRequest, annotate: Bool) {
-        let doc = SnapDocument(source: snap.image, scale: snap.scale, crop: sel.rect, background: config.defaultBackground)
+        let doc = SnapDocument(source: snap.image, scale: snap.scale, crop: sel.rect, background: config.defaultBackground, canvas: config.defaultCanvas)
         let shot = Shot(document: doc, app: sel.app)
         shot.screen = snap.screen
         if annotate && !req.quick {
@@ -338,7 +342,7 @@ final class AppController: NSObject, NSMenuDelegate {
                 self.restoreFocusIfIdle()
                 return
             }
-            let doc = SnapDocument(source: image, scale: scale, background: self.config.defaultBackground)
+            let doc = SnapDocument(source: image, scale: scale, background: self.config.defaultBackground, canvas: self.config.defaultCanvas)
             let shot = Shot(document: doc, app: nil)
             if annotate && !req.quick {
                 self.openEditor(shot, screen: screen, native: false, mode: req.editorMode ?? self.config.editorMode)
@@ -542,7 +546,7 @@ final class AppController: NSObject, NSMenuDelegate {
             showError("Could not open image", url.path)
             return
         }
-        let doc = SnapDocument(source: loaded.image, scale: loaded.scale)
+        let doc = SnapDocument(source: loaded.image, scale: loaded.scale, canvas: config.defaultCanvas)
         let shot = Shot(document: doc, app: nil)
         shot.savedURL = url
         openEditor(shot, screen: ScreenCapture.screenUnderPointer(), native: false, mode: editorMode ?? config.editorMode)
@@ -554,7 +558,7 @@ final class AppController: NSObject, NSMenuDelegate {
             showError("No image on the clipboard", "Copy an image first, then try again.")
             return
         }
-        let doc = SnapDocument(source: loaded.image, scale: loaded.scale)
+        let doc = SnapDocument(source: loaded.image, scale: loaded.scale, canvas: config.defaultCanvas)
         openEditor(Shot(document: doc, app: nil), screen: ScreenCapture.screenUnderPointer(), native: false, mode: editorMode ?? config.editorMode)
     }
 

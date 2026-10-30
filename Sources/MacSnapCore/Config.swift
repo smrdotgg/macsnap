@@ -13,6 +13,8 @@ public struct Config: Sendable {
     public var customColor = RGBA.defaultPalette[0]
     public var backgroundImage: URL?
     public var defaultBackground: Backdrop = .off
+    /// How annotations past the capture's edge grow the canvas.
+    public var defaultCanvas: CanvasMode = .overflow
     public var previewSeconds: Double = 7
     /// Action name → key combo, e.g. "capture" → "cmd+shift+2".
     public var hotkeys: [String: String] = [
@@ -72,6 +74,9 @@ public struct Config: Sendable {
         if let e = ini["editor"] {
             if let m = e["mode"] {
                 if let v = EditorMode(rawValue: m.lowercased()) { editorMode = v } else { warnings.append("editor.mode: unknown value \(m)") }
+            }
+            if let c = e["canvas"] {
+                if let v = CanvasMode(rawValue: c.lowercased()) { defaultCanvas = v } else { warnings.append("editor.canvas: unknown value \(c)") }
             }
         }
         if let o = ini["output"] {

@@ -119,12 +119,12 @@ public enum Backdrop: String, Codable, CaseIterable, Sendable {
 }
 
 public enum CanvasMode: String, Codable, CaseIterable, Sendable {
-    /// Grow with a window-gray mat around layers that leave the frame.
-    case framed
-    /// Grow tightly, only on the sides annotations need, no mat.
+    /// Grow tightly, only on the sides annotations need, with transparent space.
     case overflow
     /// Clip everything to the screenshot frame.
     case image
+    /// Grow with a window-gray mat around layers that leave the frame.
+    case framed
 
     public var label: String {
         switch self {
@@ -198,13 +198,14 @@ public struct EditorState: Equatable, Sendable {
     public var crop: CGRect
     public var background: Backdrop
     public var shadow = true
-    public var canvas: CanvasMode = .framed
+    public var canvas: CanvasMode
     public var cuts: [CutBand] = []
     public var nextId = 1
 
-    public init(crop: CGRect, background: Backdrop = .off) {
+    public init(crop: CGRect, background: Backdrop = .off, canvas: CanvasMode = .overflow) {
         self.crop = crop
         self.background = background
+        self.canvas = canvas
     }
 
     public func annotation(_ id: Int) -> Annotation? { annotations.first { $0.id == id } }
@@ -250,18 +251,20 @@ public struct SnapDocument: Sendable {
     public var scale: CGFloat
     public var initialCrop: CGRect
     public var initialBackground: Backdrop
+    public var initialCanvas: CanvasMode
     public private(set) var ops: [EditOp] = []
     public private(set) var cursor = 0
     public private(set) var state: EditorState
 
-    public init(source: CGImage, scale: CGFloat, crop: CGRect? = nil, background: Backdrop = .off) {
+    public init(source: CGImage, scale: CGFloat, crop: CGRect? = nil, background: Backdrop = .off, canvas: CanvasMode = .overflow) {
         self.source = source
         self.scale = max(1, scale)
         let full = CGRect(x: 0, y: 0, width: CGFloat(source.width) / self.scale, height: CGFloat(source.height) / self.scale)
         self.initialCrop = crop.map { $0.intersection(full) } ?? full
         if initialCrop.isNull || initialCrop.width < 1 || initialCrop.height < 1 { initialCrop = full }
         self.initialBackground = background
-        self.state = EditorState(crop: initialCrop, background: background)
+        self.initialCanvas = canvas
+        self.state = EditorState(crop: initialCrop, background: background, canvas: canvas)
     }
 
     public var logicalSize: CGSize {
@@ -301,7 +304,7 @@ public struct SnapDocument: Sendable {
     }
 
     public mutating func replay() {
-        var s = EditorState(crop: initialCrop, background: initialBackground)
+        var s = EditorState(crop: initialCrop, background: initialBackground, canvas: initialCanvas)
         for op in ops[0..<cursor] { s.apply(op) }
         state = s
     }
@@ -315,19 +318,21 @@ public struct SnapDocument: Sendable {
         public var scale: Double
         public var crop: CGRect
         public var background: Backdrop
+        /// Absent in logs written before the canvas default was recorded.
+        public var canvas: CanvasMode?
         public var ops: [EditOp]
         public var cursor: Int
     }
 
     public var log: Log {
-        Log(version: Self.formatVersion, scale: scale, crop: initialCrop, background: initialBackground, ops: ops, cursor: cursor)
+        Log(version: Self.formatVersion, scale: scale, crop: initialCrop, background: initialBackground, canvas: initialCanvas, ops: ops, cursor: cursor)
     }
 
     public init(source: CGImage, log: Log) throws {
         guard log.version == Self.formatVersion else {
             throw NSError(domain: "MacSnap", code: 1, userInfo: [NSLocalizedDescriptionKey: "Unsupported operation log version \(log.version)"])
         }
-        self.init(source: source, scale: log.scale, crop: log.crop, background: log.background)
+        self.init(source: source, scale: log.scale, crop: log.crop, background: log.background, canvas: log.canvas ?? .framed)
         ops = log.ops
         cursor = min(max(0, log.cursor), ops.count)
         replay()

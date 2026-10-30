@@ -114,6 +114,8 @@ final class RenderTests: XCTestCase {
         a.rect = CGRect(x: 80, y: 20, width: 60, height: 20)
         a.width = 4
         doc.push(.add(a))
+        XCTAssertFalse(CaptureRenderer.layout(doc.state).matted, "overflow is the default: no mat")
+        doc.push(.canvas(.framed))
         let lay = CaptureRenderer.layout(doc.state)
         XCTAssertTrue(lay.matted)
         XCTAssertEqual(lay.content.maxX, 142 + CaptureRenderer.matMargin)

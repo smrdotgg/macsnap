@@ -162,7 +162,11 @@ public enum CaptureRenderer {
         if options.drawBackdrop, lay.hasBackdrop {
             drawBackdrop(lay.background, in: out, ctx: ctx, custom: customBackground)
         }
-        let card = lay.cardRect
+        // The opaque card is the mat when framed; otherwise just the
+        // screenshot, so overflow space stays see-through to the backdrop.
+        let card = lay.matted
+            ? lay.cardRect
+            : lay.crop.offsetBy(dx: lay.offset.x, dy: lay.offset.y)
         let cardPath = CGPath(roundedRect: card, cornerWidth: lay.cardRadius, cornerHeight: lay.cardRadius, transform: nil)
         if lay.cardShadow {
             ctx.saveGState()
@@ -173,18 +177,21 @@ public enum CaptureRenderer {
             ctx.restoreGState()
         }
         ctx.saveGState()
+        // Annotations may use the whole grown canvas.
+        ctx.clip(to: lay.cardRect)
+        ctx.translateBy(x: lay.offset.x, y: lay.offset.y)
+
+        ctx.saveGState()
+        ctx.translateBy(x: -lay.offset.x, y: -lay.offset.y)
         ctx.addPath(cardPath)
         ctx.clip()
         ctx.translateBy(x: lay.offset.x, y: lay.offset.y)
-
         if lay.matted {
             ctx.setFillColor(matGray.cgColor)
             ctx.fill(lay.content)
-        } else if lay.hasBackdrop {
-            // Overflow strips over a backdrop stay see-through to it; under the
-            // screenshot nothing shows. Nothing to fill.
         }
         drawScreenshot(source: source, scale: scale, crop: lay.crop, ctx: ctx, shadowed: lay.matted)
+        ctx.restoreGState()
 
         var anns = state.annotations.filter { !options.hiddenIds.contains($0.id) }
         if let live = options.live {

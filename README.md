@@ -41,8 +41,9 @@ operation log. Nothing is flattened until you copy, save or pin.
   - An eyedropper.
   - Gradient **backdrops** (Slate, Aurora, Sunset, Lagoon, Violet), window
     gray, or your own image, with a card shadow.
-  - **Canvas growth**: draw past the edge and the canvas grows. Framed adds a
-    gray mat, Overflow grows tightly, and Image clips to the frame.
+  - **Canvas growth**: draw past the edge and the canvas grows. Overflow (the
+    default) adds transparent space, Framed adds a light-gray mat, and Image
+    clips annotations to the capture.
   - Recrop handles outside the image, unlimited undo and redo, and zoom/pan.
 - **Scroll capture**: select an area and scroll it yourself, or let MacSnap
   scroll it for you. The frames are aligned and stitched into one tall or
@@ -151,7 +152,7 @@ Shortcuts.
 | `I` | Eyedropper |
 | `1`–`8` | Color (also recolors the selection) |
 | `B` / `⇧B` | Cycle backdrop / toggle card shadow |
-| `G` / `⇧G` | Canvas growth: Framed → Overflow → Image |
+| `G` / `⇧G` | Canvas growth: Overflow → Image → Framed |
 | Wheel | Scale the selection; magnify a spotlight; or change the tool size |
 | `⌥` + wheel | Pen smoothing, corner radius, spotlight border |
 | `⌘` + wheel, pinch, `+` `-` `0` | Zoom; `0` fits |
@@ -206,6 +207,7 @@ scroll = cmd+shift+1
 
 [editor]
 mode = overlay            # or window
+canvas = overflow         # framed (gray mat) or image (clip to the capture)
 
 [output]
 autosave = true
