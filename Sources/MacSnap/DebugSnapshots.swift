@@ -109,6 +109,16 @@ enum DebugSnapshots {
 
         // 6. Export.
         if let flat = shot.flat { try? ImageFiles.writePNG(flat, scale: 2, to: dir.appendingPathComponent("13-export.png")) }
+        // 7. OCR through the app's own code path (with its model fallback).
+        final class Box: @unchecked Sendable { var lines: Int?; var error: String?; var done = false }
+        let box = Box()
+        let ocrImage = image
+        Task.detached {
+            do { box.lines = try await OCR.recognize(ocrImage).count } catch { box.error = "\(error)" }
+            box.done = true
+        }
+        while !box.done { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+        print("OCR:", box.lines.map { "\($0) lines" } ?? "failed \(box.error ?? "")")
         _ = (win, win2)
         print("snapshots written to \(dir.path)")
     }

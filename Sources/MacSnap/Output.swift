@@ -57,21 +57,46 @@ enum OCR {
         return v.split(whereSeparator: { $0 == "+" || $0 == "," }).map(String.init)
     }
 
-    static func recognize(_ image: CGImage, fast: Bool = false) async -> [Line] {
-        await withCheckedContinuation { cont in
+    /// Recognizes text, newest model first. Some macOS builds fail every
+    /// request on Vision's revision-3 model with an internal Neural Engine
+    /// error, so a failure falls back to revision 2 (no automatic language
+    /// detection, but reliable), then to fast recognition.
+    static func recognize(_ image: CGImage, fast: Bool = false) async throws -> [Line] {
+        try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                let req = VNRecognizeTextRequest()
-                req.recognitionLevel = fast ? .fast : .accurate
-                req.usesLanguageCorrection = !fast
-                if let langs = languages { req.recognitionLanguages = langs } else { req.automaticallyDetectsLanguage = true }
-                let handler = VNImageRequestHandler(cgImage: image, options: [:])
-                try? handler.perform([req])
-                let lines = (req.results ?? []).compactMap { obs -> Line? in
-                    guard let s = obs.topCandidates(1).first?.string else { return nil }
-                    let b = obs.boundingBox
-                    return Line(text: s, box: CGRect(x: b.minX, y: 1 - b.maxY, width: b.width, height: b.height))
+                var attempts: [(revision: Int?, level: VNRequestTextRecognitionLevel)] = [
+                    (nil, fast ? .fast : .accurate),
+                ]
+                if !fast {
+                    // Revision 2, by number: the constant is deprecated, but it's the fallback we want.
+                    attempts.append((2, .accurate))
+                    attempts.append((nil, .fast))
                 }
-                cont.resume(returning: lines)
+                var lastError: Error?
+                for attempt in attempts {
+                    let req = VNRecognizeTextRequest()
+                    if let r = attempt.revision { req.revision = r }
+                    req.recognitionLevel = attempt.level
+                    req.usesLanguageCorrection = attempt.level == .accurate
+                    if let langs = languages {
+                        req.recognitionLanguages = langs
+                    } else if req.revision >= VNRecognizeTextRequestRevision3 {
+                        req.automaticallyDetectsLanguage = true
+                    }
+                    do {
+                        try VNImageRequestHandler(cgImage: image, options: [:]).perform([req])
+                    } catch {
+                        lastError = error
+                        continue
+                    }
+                    let lines = (req.results ?? []).compactMap { obs -> Line? in
+                        guard let s = obs.topCandidates(1).first?.string else { return nil }
+                        let b = obs.boundingBox
+                        return Line(text: s, box: CGRect(x: b.minX, y: 1 - b.maxY, width: b.width, height: b.height))
+                    }
+                    return cont.resume(returning: lines)
+                }
+                cont.resume(throwing: lastError ?? NSError(domain: "MacSnap", code: 4))
             }
         }
     }

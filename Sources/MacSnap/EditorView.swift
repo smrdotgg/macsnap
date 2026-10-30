@@ -471,7 +471,7 @@ final class EditorView: NSView, NSTextViewDelegate {
         let img = composed
         let size = CGSize(width: CGFloat(img.width) / doc.scale, height: CGFloat(img.height) / doc.scale)
         Task { [weak self] in
-            let lines = await OCR.recognize(img, fast: true)
+            let lines = (try? await OCR.recognize(img, fast: true)) ?? []
             await MainActor.run {
                 guard let self, self.textRowsCuts == cuts else { return }
                 self.textRows = lines.map { CGRect(x: $0.box.minX * size.width, y: $0.box.minY * size.height,
@@ -783,10 +783,18 @@ final class EditorView: NSView, NSTextViewDelegate {
         guard !px.isNull, let part = img.cropping(to: px) else { return }
         flash("Recognizing text…", seconds: 10)
         Task { [weak self] in
-            let lines = await OCR.recognize(part)
-            let text = OCR.text(lines)
+            let result: Result<[OCR.Line], Error>
+            do { result = .success(try await OCR.recognize(part)) } catch { result = .failure(error) }
             await MainActor.run {
                 guard let self else { return }
+                guard case .success(let lines) = result else {
+                    if case .failure(let error) = result {
+                        NSLog("MacSnap OCR failed: \(error)")
+                        self.flash("Text recognition failed", seconds: 3)
+                    }
+                    return
+                }
+                let text = OCR.text(lines)
                 if text.isEmpty {
                     self.flash("No text found")
                 } else {
