@@ -14,7 +14,8 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 scripts/build-app.sh
-if ! codesign -dv "$APP" 2>&1 | grep -q "Authority=MacSnap Local Signing"; then
+SIG=$(codesign -dvv "$APP" 2>&1)
+if [[ "$SIG" != *"Authority=MacSnap Local Signing"* ]]; then
   echo "error: $APP is not signed with MacSnap Local Signing" >&2
   exit 1
 fi
