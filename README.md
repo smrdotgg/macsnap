@@ -6,6 +6,8 @@ A free, open-source screenshot and annotation tool for macOS, inspired by
 **[Download the latest release](https://github.com/smrdotgg/macsnap/releases/latest)**
 · Requires an Apple silicon Mac on macOS 27 or later.
 
+![MacSnap demo: select an area, add an arrow, a text label and a box, redact an API key, then copy and save to a floating preview](docs/demo.gif)
+
 Press a hotkey and MacSnap freezes the screen under the pointer and shows a
 selection overlay. Drag an area, click a window, or click open space for the
 whole screen. The capture is copied to the clipboard, saved to
