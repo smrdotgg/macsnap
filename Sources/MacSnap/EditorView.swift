@@ -471,7 +471,7 @@ final class EditorView: NSView, NSTextViewDelegate {
         let img = composed
         let size = CGSize(width: CGFloat(img.width) / doc.scale, height: CGFloat(img.height) / doc.scale)
         Task { [weak self] in
-            let lines = (try? await OCR.recognize(img, fast: true)) ?? []
+            let lines = (try? await OCR.recognize(img)) ?? []
             await MainActor.run {
                 guard let self, self.textRowsCuts == cuts else { return }
                 self.textRows = lines.map { CGRect(x: $0.box.minX * size.width, y: $0.box.minY * size.height,
@@ -781,7 +781,8 @@ final class EditorView: NSView, NSTextViewDelegate {
         let px = CGRect(x: crop.minX * scale, y: crop.minY * scale, width: crop.width * scale, height: crop.height * scale).integral
             .intersection(CGRect(x: 0, y: 0, width: img.width, height: img.height))
         guard !px.isNull, let part = img.cropping(to: px) else { return }
-        flash("Recognizing text…", seconds: 10)
+        DevLog.write("editor OCR requested: crop \(crop) → \(part.width)x\(part.height) px")
+        flash("Recognizing text…", seconds: 60)
         Task { [weak self] in
             let result: Result<[OCR.Line], Error>
             do { result = .success(try await OCR.recognize(part)) } catch { result = .failure(error) }

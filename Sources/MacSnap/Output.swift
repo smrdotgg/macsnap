@@ -1,6 +1,6 @@
 import AppKit
 import MacSnapCore
-import Vision
+@preconcurrency import Vision
 
 enum Output {
     static func copyPNG(_ data: Data) {
@@ -57,46 +57,95 @@ enum OCR {
         return v.split(whereSeparator: { $0 == "+" || $0 == "," }).map(String.init)
     }
 
-    /// Recognizes text, newest model first. Some macOS builds fail every
-    /// request on Vision's revision-3 model with an internal Neural Engine
-    /// error, so a failure falls back to revision 2 (no automatic language
-    /// detection, but reliable), then to fast recognition.
-    static func recognize(_ image: CGImage, fast: Bool = false) async throws -> [Line] {
-        try await withCheckedThrowingContinuation { cont in
+    struct Attempt {
+        var revision: Int?
+        var level: VNRequestTextRecognitionLevel
+        var label: String
+    }
+
+    /// Recognizes text with Vision's fast recognizer.
+    ///
+    /// Not the accurate one: on macOS 27.0.1 the accurate models spend ~28 s
+    /// compiling on the first request of a process (blocking every other
+    /// Vision request meanwhile), then fail each later request with an e5rt
+    /// Neural Engine error. Fast recognition answers in tens of milliseconds
+    /// and reads screenshot text well. Language correction is off: it doesn't
+    /// fix splits and it rewrites identifiers ("MacSnap" → "Macsnap").
+    static func recognize(_ source: CGImage, timeout: Double = 6) async throws -> [Line] {
+        let image = upscaledForRecognition(source)
+        let attempts = [Attempt(revision: nil, level: .fast, label: "fast")]
+        DevLog.write("OCR start \(source.width)x\(source.height) → \(image.width)x\(image.height)")
+        let overall = DispatchTime.now()
+        var lastError: Error = NSError(domain: "MacSnap", code: 4, userInfo: [NSLocalizedDescriptionKey: "No recognizer succeeded"])
+        for attempt in attempts {
+            let t0 = DispatchTime.now()
+            do {
+                let lines = try await run(attempt, on: image, timeout: timeout)
+                DevLog.write("OCR \(attempt.label) ok: \(lines.count) lines in \(DevLog.since(t0)) (total \(DevLog.since(overall)))")
+                return lines
+            } catch {
+                DevLog.write("OCR \(attempt.label) failed after \(DevLog.since(t0)): \(error)")
+                lastError = error
+            }
+        }
+        DevLog.write("OCR gave up after \(DevLog.since(overall))")
+        throw lastError
+    }
+
+    /// Fast recognition misses small glyphs; enlarging small captures toward
+    /// ~3600 px on the long side (at most 3×) recovers most of them. In tests
+    /// a downscaled screenshot went from 9 lines read at 1× to 44 at 3×, still
+    /// in about 0.1 s. Boxes are normalized, so callers are unaffected.
+    static func upscaledForRecognition(_ img: CGImage) -> CGImage {
+        let long = CGFloat(max(img.width, img.height))
+        let k = min(3, 3600 / max(1, long))
+        guard k > 1.15 else { return img }
+        let w = Int(CGFloat(img.width) * k), h = Int(CGFloat(img.height) * k)
+        guard w * h <= 40_000_000, let ctx = CaptureRenderer.makeContext(width: w, height: h) else { return img }
+        ctx.interpolationQuality = .high
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? img
+    }
+
+    private static func run(_ attempt: Attempt, on image: CGImage, timeout: Double) async throws -> [Line] {
+        let req = VNRecognizeTextRequest()
+        if let r = attempt.revision { req.revision = r }
+        req.recognitionLevel = attempt.level
+        req.usesLanguageCorrection = false
+        if let langs = languages {
+            req.recognitionLanguages = langs
+        } else if req.revision >= VNRecognizeTextRequestRevision3 {
+            req.automaticallyDetectsLanguage = true
+        }
+        final class Once: @unchecked Sendable {
+            private let lock = NSLock()
+            private var done = false
+            func claim() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                if done { return false }
+                done = true
+                return true
+            }
+        }
+        let once = Once()
+        return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                var attempts: [(revision: Int?, level: VNRequestTextRecognitionLevel)] = [
-                    (nil, fast ? .fast : .accurate),
-                ]
-                if !fast {
-                    // Revision 2, by number: the constant is deprecated, but it's the fallback we want.
-                    attempts.append((2, .accurate))
-                    attempts.append((nil, .fast))
-                }
-                var lastError: Error?
-                for attempt in attempts {
-                    let req = VNRecognizeTextRequest()
-                    if let r = attempt.revision { req.revision = r }
-                    req.recognitionLevel = attempt.level
-                    req.usesLanguageCorrection = attempt.level == .accurate
-                    if let langs = languages {
-                        req.recognitionLanguages = langs
-                    } else if req.revision >= VNRecognizeTextRequestRevision3 {
-                        req.automaticallyDetectsLanguage = true
-                    }
-                    do {
-                        try VNImageRequestHandler(cgImage: image, options: [:]).perform([req])
-                    } catch {
-                        lastError = error
-                        continue
-                    }
+                do {
+                    try VNImageRequestHandler(cgImage: image, options: [:]).perform([req])
                     let lines = (req.results ?? []).compactMap { obs -> Line? in
                         guard let s = obs.topCandidates(1).first?.string else { return nil }
                         let b = obs.boundingBox
                         return Line(text: s, box: CGRect(x: b.minX, y: 1 - b.maxY, width: b.width, height: b.height))
                     }
-                    return cont.resume(returning: lines)
+                    if once.claim() { cont.resume(returning: lines) }
+                } catch {
+                    if once.claim() { cont.resume(throwing: error) }
                 }
-                cont.resume(throwing: lastError ?? NSError(domain: "MacSnap", code: 4))
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                guard once.claim() else { return }
+                req.cancel()
+                cont.resume(throwing: NSError(domain: "MacSnap", code: 5, userInfo: [NSLocalizedDescriptionKey: "timed out after \(timeout)s"]))
             }
         }
     }

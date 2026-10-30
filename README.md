@@ -232,6 +232,17 @@ Existing names get `-2`, `-3`, and so on. Environment overrides:
 `MACSNAP_SCREENSHOT_DIR`, `MACSNAP_OCR_LANGS` (for example `en-US+de-DE`), and
 `MACSNAP_RECENT_DIR`.
 
+## Troubleshooting
+
+MacSnap writes a plain-text developer log to
+`~/Library/Logs/MacSnap/macsnap.log`, including timings for each OCR run.
+
+OCR uses Vision's fast recognizer on purpose. On macOS 27.0.1 the accurate
+recognizer takes about 28 s on its first use in a process, blocking all other
+text recognition meanwhile, and then fails every later request with a Neural
+Engine (`e5rt`) error. Small captures are enlarged before recognition, which
+recovers most of the small text the fast recognizer would otherwise miss.
+
 ## Development
 
 ```bash

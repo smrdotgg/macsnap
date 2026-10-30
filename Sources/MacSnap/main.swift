@@ -106,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             installMainMenu()
             AppController.shared.start()
         }
+        DevLog.write("launched \(Bundle.main.bundlePath) pid \(getpid()) macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
     }
@@ -143,6 +144,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if q["save"] == "1" { args.append("--save") }
         case "clipboard": args.append("--clipboard")
         case "open": if let p = q["path"] { args += ["--file", p] }
+        case "debug-ocr":
+            // Developer hook: OCR an image inside the running app, results to the dev log.
+            guard let p = q["path"], let loaded = ImageFiles.load(url: URL(fileURLWithPath: p)) else {
+                DevLog.write("debug-ocr: cannot load \(q["path"] ?? "nil")")
+                return
+            }
+            DevLog.write("debug-ocr: \(p)")
+            let image = loaded.image
+            let timeout = q["timeout"].flatMap(Double.init) ?? 6
+            Task.detached {
+                do {
+                    let lines = try await OCR.recognize(image, timeout: timeout)
+                    DevLog.write("debug-ocr result: \(lines.count) lines; first: \(lines.prefix(3).map(\.text))")
+                } catch {
+                    DevLog.write("debug-ocr error: \(error)")
+                }
+            }
+            return
         default: return
         }
         MainActor.assumeIsolated {
